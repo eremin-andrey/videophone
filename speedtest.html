@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Связь по странам</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #fff; --text: #1a1d21; --muted: #5b6570; --line: #dde1e6;
+    --accent: #2f6fe0; --good: #1f8a4c; --mid: #b7791f; --bad: #c9373c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111418; --panel: #1b2027; --text: #e8eaed; --muted: #9aa3ad; --line: #2c333c;
+            --accent: #4f8cf5; --good: #3fbf74; --mid: #e0a43a; --bad: #ef5b60; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 4px 0 6px; }
+  .note { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 9px 14px; cursor: pointer;
+           background: var(--accent); color: #fff; }
+  button.sec { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; }
+  th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .good { color: var(--good); font-weight: 600; }
+  .mid { color: var(--mid); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .grp td { background: var(--bg); font-size: 12px; color: var(--muted); font-weight: 600; }
+  .row-speed button { padding: 3px 8px; font-size: 12px; }
+  #custom { display: flex; gap: 8px; margin: 12px 0; }
+  #custom input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border-radius: 8px;
+                  border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  #info { font-size: 12px; color: var(--muted); }
+  @media (max-width: 520px) { .hide-sm { display: none; } th, td { padding: 6px 5px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Связь по странам</h1>
+  <p class="note">
+    Страница измеряет, как быстро это устройство достаёт тестовые серверы хостингов в разных странах.
+    Открывайте <b>без VPN</b> — в той сети, где будет работать видеотелефон (дом, мобильный интернет).
+    «Подключение» — первый запрос (DNS + TCP + TLS), «Отклик» — медиана следующих трёх (≈ задержка сети).
+    Зелёный — до 80 мс, жёлтый — до 150 мс, красный — больше или недоступен.
+  </p>
+  <div id="info"></div>
+  <div class="bar">
+    <button id="btnAll">Проверить все</button>
+    <button id="btnSort" class="sec">Сортировать по отклику</button>
+    <button id="btnCopy" class="sec">Скопировать результаты</button>
+  </div>
+  <div id="custom">
+    <input id="customUrl" placeholder="Свой адрес, например https://мой-сервер/">
+    <button id="btnCustom" class="sec">Проверить</button>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Страна, город</th><th class="hide-sm">Хостинг</th>
+      <th class="num">Подключение</th><th class="num">Отклик</th><th class="num">Скорость</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p class="note" style="margin-top:12px">
+    «Скорость» скачивает до ~10–30 МБ (на мобильном интернете это расходует трафик).
+    Задержка и потери до тестового сервера хостинга близки к тому, что будет у вашего сервера в том же дата-центре,
+    но не гарантируют этого: замедления отдельных сетей меняются.
+  </p>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  // speed: "cors" — поток с остановкой по времени, "rt" — файл известного размера через Resource Timing
+  var T = [
+    { g: "Россия (для сравнения)" },
+    { c: "Россия, Москва", h: "Selectel", u: "https://speedtest.selectel.ru/10MB", speed: "rt", size: 10485760 },
+    { c: "Россия", h: "Яндекс (ya.ru)", u: "https://ya.ru/" },
+    { g: "Европа — север" },
+    { c: "Финляндия, Хельсинки", h: "Hetzner", u: "https://hel1-speed.hetzner.com/" },
+    { c: "Швеция, Стокгольм", h: "Vultr", u: "https://sto-se-ping.vultr.com/", speed: "cors", file: "https://sto-se-ping.vultr.com/vultr.com.100MB.bin" },
+    { c: "Швеция, Стокгольм", h: "Linode (Akamai)", u: "https://speedtest.stockholm.linode.com/" },
+    { c: "Польша, Варшава", h: "Vultr", u: "https://waw-pl-ping.vultr.com/", speed: "cors", file: "https://waw-pl-ping.vultr.com/vultr.com.100MB.bin" },
+    { g: "Европа — центр и запад" },
+    { c: "Германия, Франкфурт", h: "Vultr", u: "https://fra-de-ping.vultr.com/", speed: "cors", file: "https://fra-de-ping.vultr.com/vultr.com.100MB.bin" },
+    { c: "Германия, Франкфурт", h: "Linode (Akamai)", u: "https://speedtest.frankfurt.linode.com/" },
+    { c: "Германия, Фалькенштайн", h: "Hetzner", u: "https://fsn1-speed.hetzner.com/" },
+    { c: "Германия, Нюрнберг", h: "Hetzner", u: "https://nbg1-speed.hetzner.com/" },
+    { c: "Нидерланды, Амстердам", h: "Vultr", u: "https://ams-nl-ping.vultr.com/", speed: "cors", file: "https://ams-nl-ping.vultr.com/vultr.com.100MB.bin" },
+    { c: "Франция, Париж", h: "Vultr", u: "https://par-fr-ping.vultr.com/", speed: "cors", file: "https://par-fr-ping.vultr.com/vultr.com.100MB.bin" },
+    { c: "Франция, Рубе", h: "OVH", u: "https://proof.ovh.net/files/10Mb.dat", lat: "https://proof.ovh.net/", speed: "rt", size: 10485760 },
+    { c: "Великобритания, Лондон", h: "Vultr", u: "https://lon-gb-ping.vultr.com/", speed: "cors", file: "https://lon-gb-ping.vultr.com/vultr.com.100MB.bin" },
+    { c: "Великобритания, Лондон", h: "Linode (Akamai)", u: "https://speedtest.london.linode.com/" },
+    { c: "Испания, Мадрид", h: "Vultr", u: "https://mad-es-ping.vultr.com/", speed: "cors", file: "https://mad-es-ping.vultr.com/vultr.com.100MB.bin" },
+    { g: "Азия" },
+    { c: "Сингапур", h: "Vultr", u: "https://sgp-ping.vultr.com/", speed: "cors", file: "https://sgp-ping.vultr.com/vultr.com.100MB.bin" },
+    { c: "Сингапур", h: "Linode (Akamai)", u: "https://speedtest.singapore.linode.com/" },
+    { c: "Япония, Токио", h: "Vultr", u: "https://hnd-jp-ping.vultr.com/", speed: "cors", file: "https://hnd-jp-ping.vultr.com/vultr.com.100MB.bin" },
+    { c: "Южная Корея, Сеул", h: "Vultr", u: "https://sel-kor-ping.vultr.com/", speed: "cors", file: "https://sel-kor-ping.vultr.com/vultr.com.100MB.bin" },
+    { c: "Индия, Мумбаи", h: "Vultr", u: "https://bom-in-ping.vultr.com/", speed: "cors", file: "https://bom-in-ping.vultr.com/vultr.com.100MB.bin" },
+    { g: "Дальше" },
+    { c: "Израиль, Тель-Авив", h: "Vultr", u: "https://tlv-il-ping.vultr.com/", speed: "cors", file: "https://tlv-il-ping.vultr.com/vultr.com.100MB.bin" },
+    { c: "США, Нью-Джерси", h: "Vultr", u: "https://nj-us-ping.vultr.com/", speed: "cors", file: "https://nj-us-ping.vultr.com/vultr.com.100MB.bin" },
+    { g: "Сервисы видеотелефона и прокси (для сравнения)" },
+    { c: "GitHub Pages", h: "eremin.online", u: "https://eremin.online/" },
+    { c: "Cloudflare", h: "1.1.1.1", u: "https://1.1.1.1/cdn-cgi/trace" },
+    { c: "Сигнальный сервер PeerJS", h: "0.peerjs.com (Cloudflare)", u: "https://0.peerjs.com/peerjs/id" }
+  ];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  try { performance.setResourceTimingBufferSize(2000); } catch (e) {}
+
+  function bust(u) { return u + (u.indexOf("?") >= 0 ? "&" : "?") + "r=" + Math.random().toString(36).slice(2); }
+  function cls(ms) { return ms == null ? "bad" : ms < 80 ? "good" : ms < 150 ? "mid" : "bad"; }
+  function fmt(ms) { return ms == null ? "—" : Math.round(ms) + " мс"; }
+
+  // время до заголовков ответа; тело не качаем (обрываем), поэтому годятся и большие файлы
+  async function once(url) {
+    var ctl = new AbortController(), timedOut = false;
+    var to = setTimeout(function () { timedOut = true; ctl.abort(); }, 8000);
+    var t = performance.now();
+    try {
+      await fetch(bust(url), { mode: "no-cors", cache: "no-store", signal: ctl.signal });
+      var ms = performance.now() - t;
+      ctl.abort();
+      return { ms: ms };
+    } catch (e) {
+      return { err: timedOut ? "нет ответа" : "сброс за " + Math.round(performance.now() - t) + " мс" };
+    } finally { clearTimeout(to); }
+  }
+
+  // первый запрос — с подключением, затем 3 повтора по уже открытому соединению
+  async function measure(t) {
+    var url = t.lat || t.u;
+    var f = await once(url);
+    if (f.err) return { first: null, rtt: null, lost: 4, err: f.err };
+    var xs = [], lost = 0;
+    for (var i = 0; i < 3; i++) { var x = await once(url); if (x.err) lost++; else xs.push(x.ms); }
+    xs.sort(function (a, b) { return a - b; });
+    return { first: f.ms, rtt: xs.length ? xs[Math.floor(xs.length / 2)] : null, lost: lost };
+  }
+
+  async function speedCors(file) {
+    var ctl = new AbortController(), t0 = performance.now(), bytes = 0;
+    var hard = setTimeout(function () { ctl.abort(); }, 15000);
+    try {
+      var r = await fetch(bust(file), { cache: "no-store", signal: ctl.signal });
+      var rd = r.body.getReader();
+      while (true) {
+        var c = await rd.read();
+        if (c.done) break;
+        bytes += c.value.length;
+        if (performance.now() - t0 > 8000 || bytes > 30e6) { ctl.abort(); break; }
+      }
+    } catch (e) { if (!bytes) return null; }
+    finally { clearTimeout(hard); }
+    var sec = (performance.now() - t0) / 1000;
+    return bytes * 8 / sec / 1e6;
+  }
+
+  async function speedRt(file, size) {
+    var u = bust(file), ctl = new AbortController(), to = setTimeout(function () { ctl.abort(); }, 30000);
+    try { await fetch(u, { mode: "no-cors", cache: "no-store", signal: ctl.signal }); } catch (e) { clearTimeout(to); return null; }
+    for (var i = 0; i < 300; i++) {
+      var e = performance.getEntriesByName(u)[0];
+      if (e && e.responseEnd > 0) { clearTimeout(to); return size * 8 / ((e.responseEnd - e.startTime) / 1000) / 1e6; }
+      await sleep(100);
+    }
+    clearTimeout(to);
+    return null;
+  }
+
+  function render() {
+    var html = "";
+    T.forEach(function (t, i) {
+      if (t.g) { html += '<tr class="grp"><td colspan="5">' + t.g + "</td></tr>"; return; }
+      var r = t.res;
+      var first = r ? '<span class="' + cls(r.first == null ? null : r.first / 3) + '">' + (r.first == null ? r.err : fmt(r.first)) + "</span>" : "";
+      var rtt = r ? '<span class="' + cls(r.rtt) + '">' + fmt(r.rtt) + "</span>" + (r.lost ? ' <span class="sub">потерь ' + r.lost + "/4</span>" : "") : (t.busy ? '<span class="sub">…</span>' : "");
+      var sp = t.speedRes != null ? (t.speedRes === false ? '<span class="bad">ошибка</span>' : Math.round(t.speedRes) + " Мбит/с")
+             : (t.speed ? '<button class="sec" data-speed="' + i + '">' + (t.speedBusy ? "…" : "Замерить") + "</button>" : '<span class="sub">—</span>');
+      html += "<tr><td>" + t.c + '<div class="sub">' + t.h + '</div></td><td class="hide-sm">' + t.h +
+              '</td><td class="num">' + first + '</td><td class="num">' + rtt + '</td><td class="num row-speed">' + sp + "</td></tr>";
+    });
+    $("rows").innerHTML = html;
+  }
+
+  async function runOne(t) {
+    t.busy = true; render();
+    t.res = await measure(t);
+    t.busy = false; render();
+  }
+
+  async function runAll() {
+    $("btnAll").disabled = true;
+    T.forEach(function (t) { if (!t.g) { t.res = null; } });
+    render();
+    // по три параллельно — быстрее, но не мешают друг другу заметно
+    var list = T.filter(function (t) { return !t.g; }), k = 0;
+    async function worker() { while (k < list.length) { var t = list[k++]; await runOne(t); } }
+    await Promise.all([worker(), worker(), worker()]);
+    $("btnAll").disabled = false;
+  }
+
+  $("rows").addEventListener("click", async function (e) {
+    var b = e.target.closest("button[data-speed]");
+    if (!b) return;
+    var t = T[+b.getAttribute("data-speed")];
+    t.speedBusy = true; render();
+    var v = t.speed === "cors" ? await speedCors(t.file) : await speedRt(t.u, t.size);
+    t.speedBusy = false; t.speedRes = v == null ? false : v; render();
+  });
+
+  $("btnAll").addEventListener("click", runAll);
+  $("btnSort").addEventListener("click", function () {
+    var items = T.filter(function (t) { return !t.g; });
+    items.sort(function (a, b) {
+      var x = a.res && a.res.rtt != null ? a.res.rtt : 1e9, y = b.res && b.res.rtt != null ? b.res.rtt : 1e9;
+      return x - y;
+    });
+    T = [{ g: "Отсортировано по отклику" }].concat(items);
+    render();
+  });
+  $("btnCustom").addEventListener("click", async function () {
+    var u = $("customUrl").value.trim();
+    if (!/^https:\/\//.test(u)) { $("customUrl").focus(); return; }
+    var t = { c: "Свой адрес", h: u.replace(/^https:\/\//, ""), u: u };
+    T.unshift(t);
+    await runOne(t);
+  });
+  $("btnCopy").addEventListener("click", function () {
+    var lines = ["Связь по странам — " + new Date().toLocaleString("ru-RU"), $("info").textContent];
+    T.forEach(function (t) {
+      if (t.g) { lines.push("== " + t.g); return; }
+      var r = t.res;
+      lines.push(t.c + " (" + t.h + "): подключение " + (r ? (r.first == null ? r.err : fmt(r.first)) : "не проверено") +
+                 ", отклик " + (r ? fmt(r.rtt) : "—") + (r && r.lost ? ", потерь " + r.lost + "/4" : "") +
+                 (t.speedRes ? ", скорость " + Math.round(t.speedRes) + " Мбит/с" : ""));
+    });
+    var text = lines.join("\n");
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { $("btnCopy").textContent = "Скопировано"; });
+  });
+
+  var conn = navigator.connection;
+  $("info").textContent = "Устройство: " + navigator.userAgent.replace(/^Mozilla\/5\.0 /, "").slice(0, 90) +
+    (conn && conn.effectiveType ? " · сеть: " + conn.effectiveType : "");
+  render();
+})();
+</script>
+</body>
+</html>
